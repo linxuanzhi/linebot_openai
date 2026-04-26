@@ -4,7 +4,7 @@ import time
 import schedule
 import threading
 from datetime import datetime
-from tg_bot import start, pick, run_screening, generate_chart
+from tg_bot_v2 import start, pick, query, handle_callback, run_screening, generate_mpf_chart
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler
 from dotenv import load_dotenv
@@ -25,6 +25,8 @@ def run_tg_bot():
     application = ApplicationBuilder().token(token).build()
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('pick', pick))
+    application.add_handler(CommandHandler('query', query))
+    application.add_handler(CallbackQueryHandler(handle_callback))
 
     # Run polling in the background
     application.run_polling()
@@ -39,15 +41,15 @@ def scheduled_task():
         
     async def run():
         from telegram import Bot
-        bot = Bot(token)
-        results = await run_screening(limit=50)
+        async with Bot(token) as bot:
+            results = await run_screening(limit=50)
         if not results:
             await bot.send_message(chat_id, "今日盤後掃描：無符合條件個股。")
             return
 
         await bot.send_message(chat_id, f"🔔 盤後自動推播：今日共選出 {len(results)} 檔個股")
         for symbol, df, risk in results:
-            chart_path = generate_chart(df, symbol)
+            chart_path = generate_mpf_chart(df, symbol)
             msg = f"📍 股票：{symbol}\n💰 買入價：{risk['buy_price']:.2f}\n🚨 停損價：{risk['stop_loss']:.2f}\n📈 目標價：{risk['target_price']:.2f}"
             keyboard = [[InlineKeyboardButton("查看基本面", url=f"https://tw.stock.yahoo.com/quote/{symbol}")]]
             await bot.send_photo(chat_id, photo=open(chart_path, 'rb'), caption=msg, reply_markup=InlineKeyboardMarkup(keyboard))

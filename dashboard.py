@@ -38,9 +38,14 @@ if st.sidebar.button("開始分析"):
                 )
 
             # 3. Calculate indicators and strategy
-            # Prepare dummy history for single analysis
-            dummy_history = [{'SITC': 1000, 'Foreign': 1000}] * 3
-            is_matched, risk = apply_strategy(df, dummy_history, ma_window=ma_days, sl_percent=sl_ratio)
+            # Extract historical institutional data for this stock
+            sorted_dates = sorted(institutional_data.keys(), reverse=True)
+            history_list = []
+            for d_key in sorted_dates:
+                if stock_code in institutional_data[d_key]:
+                    history_list.append(institutional_data[d_key][stock_code])
+
+            is_matched, risk = apply_strategy(df, history_list, ma_window=ma_days, sl_percent=sl_ratio)
 
             df = calculate_ma(df, windows=[ma_days])
             df = calculate_bollinger_bands(df)

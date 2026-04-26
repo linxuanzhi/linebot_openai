@@ -12,3 +12,6 @@ python-dotenv
 lxml
 gunicorn
 flask
+fuzzywuzzy
+python-Levenshtein
+matplotlib

@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 import time
 from datetime import datetime, timedelta
 from FinMind.data import DataLoader
+from fuzzywuzzy import process
 
 def get_historical_data(symbol, period="1y", auto_adjust=True):
     """
@@ -175,9 +176,9 @@ def get_margin_trading(date_obj=None):
     except:
         return None
 
-def get_all_tsec_symbols():
+def get_all_tsec_data():
     """
-    Fetch all stock symbols from TWSE.
+    Fetch all stock symbols and names from TWSE.
     """
     url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
     try:
@@ -186,13 +187,71 @@ def get_all_tsec_symbols():
         df.columns = df.iloc[0]
         df = df.iloc[2:]
         # Filter for stocks (format: "Code Name")
-        df['Symbol'] = df['有價證券代號及名稱'].str.split('　').str[0]
+        df['Code'] = df['有價證券代號及名稱'].str.split('　').str[0]
+        df['Name'] = df['有價證券代號及名稱'].str.split('　').str[1]
         # Keep only numeric codes (stocks)
-        df = df[df['Symbol'].str.isdigit()]
-        return df['Symbol'].tolist()
+        df = df[df['Code'].str.isdigit()]
+        return df[['Code', 'Name']]
     except Exception as e:
         print(f"Error fetching symbols: {e}")
+        return pd.DataFrame()
+
+def get_all_tsec_symbols():
+    """
+    Fetch all stock symbols from TWSE.
+    """
+    df = get_all_tsec_data()
+    if df.empty:
         return []
+    return df['Code'].tolist()
+
+def lookup_stock_code(query):
+    """
+    Lookup stock code by name or code with fuzzy matching.
+    """
+    # If query is numeric, assume it's a code
+    if query.isdigit():
+        return query
+
+    df = get_all_tsec_data()
+    if df.empty:
+        return None
+
+    # Exact match
+    match = df[df['Name'] == query]
+    if not match.empty:
+        return match.iloc[0]['Code']
+
+    # Fuzzy match
+    names = df['Name'].tolist()
+    best_match, score = process.extractOne(query, names)
+    if score >= 70: # Confidence threshold
+        return df[df['Name'] == best_match].iloc[0]['Code']
+
+    return None
+
+def get_fundamental_data(symbol):
+    """
+    Fetch fundamental data (PE, Yield, Revenue).
+    """
+    if not symbol.endswith(".TW") and not symbol.endswith(".TWO"):
+        symbol = f"{symbol}.TW"
+
+    data = {}
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        data['pe'] = info.get('trailingPE', 'N/A')
+        data['yield'] = info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 'N/A'
+
+        # Get revenue growth (simplified using yfinance)
+        # For more accurate "last 3 months YoY", one would need FinMind or specific scraping
+        data['revenue_growth'] = info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 'N/A'
+    except:
+        data['pe'] = 'N/A'
+        data['yield'] = 'N/A'
+        data['revenue_growth'] = 'N/A'
+    return data
 
 if __name__ == "__main__":
     # Test

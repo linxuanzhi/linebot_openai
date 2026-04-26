@@ -62,24 +62,26 @@ def check_above_monthly_line(df):
     df['Above_20MA'] = df['Close'] > df['20MA']
     return df
 
-def apply_strategy(df, institutional_history_list, ma_window=20, sl_percent=10):
+def apply_strategy(df, institutional_history_list, short_ma=20, long_ma=60, sl_percent=10):
     """
     Apply the selection logic:
-    - Price > 20MA
+    - Price > Short MA > Long MA
     - SITC continuous net buy >= 3 days
     - Volume expansion (Today > 5-day avg volume)
     Returns: (bool, risk_metrics)
     """
-    if len(df) < ma_window:
+    max_ma = max(short_ma, long_ma)
+    if len(df) < max_ma:
         return False, {}
 
-    df = calculate_ma(df, windows=[ma_window])
-    ma_col = f'{ma_window}MA'
+    df = calculate_ma(df, windows=[short_ma, long_ma])
+    short_col = f'{short_ma}MA'
+    long_col = f'{long_ma}MA'
 
     latest = df.iloc[-1]
 
-    # 1. Price > MA
-    price_above_ma = latest['Close'] > latest[ma_col]
+    # 1. Price > Short MA > Long MA
+    alignment = latest['Close'] > latest[short_col] > latest[long_col]
 
     # 2. SITC continuous net buy >= 3 days
     if len(institutional_history_list) < 3:
@@ -91,7 +93,7 @@ def apply_strategy(df, institutional_history_list, ma_window=20, sl_percent=10):
     vol_5ma = df['Volume'].tail(5).mean()
     vol_expansion = latest['Volume'] > vol_5ma
 
-    is_matched = price_above_ma and sitc_cont_buy and vol_expansion
+    is_matched = alignment and sitc_cont_buy and vol_expansion
 
     risk_metrics = {}
     if is_matched:
