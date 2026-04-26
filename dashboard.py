@@ -35,9 +35,9 @@ if st.sidebar.button("開始分析"):
             # 2. Get institutional data
             with st.status("正在抓取法人籌碼資料..."):
                 institutional_data = get_recent_institutional_data(3)
-                # Aggregate net buy across all fetched dates for this stock
+                # Aggregate SITC + Foreign net buy across all fetched dates for this stock
                 net_buy_3d = sum(
-                    data.get(stock_code, {}).get('Total', 0)
+                    (data.get(stock_code, {}).get('SITC', 0) + data.get(stock_code, {}).get('Foreign', 0))
                     for data in institutional_data.values()
                 )
 
@@ -49,7 +49,7 @@ if st.sidebar.button("開始分析"):
                 if stock_code in institutional_data[d_key]:
                     history_list.append(institutional_data[d_key][stock_code])
 
-            is_matched, risk = apply_strategy(df, history_list, ma_window=ma_days, sl_percent=sl_ratio)
+            is_matched, risk = apply_strategy(df, history_list, short_ma=ma_days, sl_percent=sl_ratio)
 
             df = calculate_ma(df, windows=[ma_days])
             df = calculate_bollinger_bands(df)
@@ -71,9 +71,9 @@ if st.sidebar.button("開始分析"):
 
             col1, col2, col3, col4, col5 = st.columns(5)
             col1.metric("最新收盤價", f"{latest_price:.2f}", f"{price_change:.2f}")
-            col2.metric("三大法人(3日)", f"{net_buy_3d/1000:.0f} 張")
+            col2.metric("法人合計(3日)", f"{net_buy_3d/1000:.0f} 張")
 
-            signal = "符合條件" if df['Strategy_Signal'].iloc[-1] else "不符合"
+            signal = "符合條件" if is_matched else "不符合"
             col3.metric("策略信號", signal)
 
             pe_val = stock_info['pe']
