@@ -1,4 +1,15 @@
-line-bot-sdk
-flask
-openai < 1.0.0
+pandas
+yfinance
+requests
+streamlit
+plotly
+beautifulsoup4
+schedule
+FinMind
+python-telegram-bot
+mplfinance
+python-dotenv
+lxml
 gunicorn
+flask
+matplotlib
