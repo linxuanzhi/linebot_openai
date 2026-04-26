@@ -1,4 +1,8 @@
-line-bot-sdk
-flask
-openai < 1.0.0
-gunicorn
+python-telegram-bot
+yfinance
+FinMind
+pandas
+mplfinance
+matplotlib
+python-dotenv
+tqdm
