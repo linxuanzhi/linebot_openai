@@ -14,6 +14,9 @@ st.sidebar.header("設定")
 stock_code = st.sidebar.text_input("輸入股票代號", value="2330")
 period = st.sidebar.selectbox("選擇時間範圍", ["6mo", "1y", "2y", "5y"], index=1)
 
+st.sidebar.header("風險控管設定")
+sl_ratio = st.sidebar.slider("停損比例 (%)", 5, 20, 10)
+
 if st.sidebar.button("開始分析"):
     with st.spinner("載入資料中..."):
         # 1. Fetch data
@@ -65,7 +68,28 @@ if st.sidebar.button("開始分析"):
             yield_val = stock_info['yield']
             col5.metric("殖利率", f"{yield_val if yield_val == 'N/A' else f'{yield_val:.2f}%'}")
 
-            # 5. Candlestick Chart
+            # 6. Risk Management Table
+            st.subheader("交易策略建議 (風報比 1:2)")
+            buy_price = latest_price
+            stop_loss = buy_price * (1 - sl_ratio/100)
+            take_profit = buy_price * (1 + (sl_ratio * 2)/100)
+
+            risk_df = pd.DataFrame({
+                "項目": ["建議買入價", "停損價格 (Red)", "目標獲利價 (Green)"],
+                "價格": [f"{buy_price:.2f}", f"{stop_loss:.2f}", f"{take_profit:.2f}"],
+                "說明": ["當日收盤價", f"-{sl_ratio}% 停損", f"+{sl_ratio*2}% 獲利"]
+            })
+
+            def color_risk(row):
+                if "停損" in row['項目']:
+                    return ['color: red'] * len(row)
+                elif "目標" in row['項目']:
+                    return ['color: green'] * len(row)
+                return [''] * len(row)
+
+            st.table(risk_df.style.apply(color_risk, axis=1))
+
+            # 7. Candlestick Chart
             fig = go.Figure()
             fig.add_trace(go.Candlestick(x=df.index,
                             open=df['Open'],
