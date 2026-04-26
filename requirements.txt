@@ -2,3 +2,9 @@ line-bot-sdk
 flask
 openai < 1.0.0
 gunicorn
+pandas
+yfinance
+requests
+streamlit
+plotly
+beautifulsoup4
