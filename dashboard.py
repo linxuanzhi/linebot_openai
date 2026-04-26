@@ -24,7 +24,11 @@ if st.sidebar.button("開始分析"):
             # 2. Get institutional data
             with st.status("正在抓取法人籌碼資料..."):
                 institutional_data = get_recent_institutional_data(3)
-                net_buy_3d = institutional_data.get(stock_code, 0)
+                # Aggregate net buy across all fetched dates for this stock
+                net_buy_3d = sum(
+                    data.get(stock_code, {}).get('Total', 0)
+                    for data in institutional_data.values()
+                )
 
             # 3. Calculate indicators and strategy
             df = calculate_ma(df)

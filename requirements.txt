@@ -8,3 +8,5 @@ requests
 streamlit
 plotly
 beautifulsoup4
+schedule
+FinMind

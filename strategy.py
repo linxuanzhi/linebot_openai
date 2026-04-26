@@ -84,6 +84,48 @@ def apply_strategy(df, institutional_net_buy_3d=0):
     )
     return df
 
+def strong_rebound_screening(df, institutional_history_list):
+    """
+    Technical:
+    - Today's Close = 20-day High
+    - Volume > 1.5 * 5-day average Volume
+    Chip:
+    - SITC continuous net buy > 3 days
+    - Foreign Net Buy today (and was selling before, but the request says '轉賣為買',
+      we will simplify to 'Today Foreign > 0 and Yesterday Foreign < 0')
+    Filter:
+    - 5-day average Volume > 500 sheets (500,000 shares)
+    """
+    if len(df) < 20:
+        return False
+
+    # 1. Technical
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    is_20d_high = latest['Close'] >= df['Close'].tail(20).max()
+
+    vol_5ma = df['Volume'].tail(5).mean()
+    vol_spike = latest['Volume'] > 1.5 * vol_5ma
+
+    # Filter low volume (500 sheets = 500,000 shares)
+    is_not_cold = vol_5ma > 500 * 1000
+
+    # 2. Chip (institutional_history_list is list of daily_data for the stock)
+    # [{date1: {SITC: x, Foreign: y}}, {date2: ...}] - latest to oldest
+    if len(institutional_history_list) < 3:
+        return False
+
+    sitc_cont_buy = all(d.get('SITC', 0) > 0 for d in institutional_history_list[:3])
+
+    foreign_turn_buy = (institutional_history_list[0].get('Foreign', 0) > 0 and
+                        institutional_history_list[1].get('Foreign', 0) < 0)
+
+    if is_20d_high and vol_spike and is_not_cold and sitc_cont_buy and foreign_turn_buy:
+        return True
+
+    return False
+
 if __name__ == "__main__":
     # Small test
     data = {'Close': [100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 120, 118, 116, 114, 112, 110, 108, 106, 104, 102, 100]}
