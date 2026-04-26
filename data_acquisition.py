@@ -243,10 +243,9 @@ def get_fundamental_data(symbol):
         info = ticker.info
         data['pe'] = info.get('trailingPE', 'N/A')
         data['yield'] = info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 'N/A'
-
-        # Get revenue growth (simplified using yfinance)
-        # For more accurate "last 3 months YoY", one would need FinMind or specific scraping
         data['revenue_growth'] = info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else 'N/A'
+        data['market_cap'] = info.get('marketCap', 'N/A')
+        data['name'] = info.get('longName', symbol)
     except:
         data['pe'] = 'N/A'
         data['yield'] = 'N/A'

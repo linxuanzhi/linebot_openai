@@ -4,7 +4,7 @@ import time
 import schedule
 import threading
 from datetime import datetime
-from tg_bot_v2 import start, pick, query, handle_callback, run_screening, generate_mpf_chart
+from tg_bot_v3 import start, pick, query, handle_prof_callback
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler
 from dotenv import load_dotenv
@@ -26,7 +26,7 @@ def run_tg_bot():
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('pick', pick))
     application.add_handler(CommandHandler('query', query))
-    application.add_handler(CallbackQueryHandler(handle_callback))
+    application.add_handler(CallbackQueryHandler(handle_prof_callback))
 
     # Run polling in the background
     application.run_polling()
