@@ -6,7 +6,7 @@ import time
 import asyncio
 from datetime import datetime
 from data_acquisition import sync_stock_list
-from tg_bot_v3 import get_application
+from bot import get_application
 
 def run_streamlit():
     """Launch Streamlit dashboard."""
