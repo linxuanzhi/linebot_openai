@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
-from data_acquisition import get_historical_data, get_recent_institutional_data
+from data_acquisition import get_historical_data, get_recent_institutional_data, find_stock
 from strategy import calculate_ma, calculate_bollinger_bands, apply_strategy, calculate_rsi, calculate_macd
 
 st.set_page_config(page_title="台股分析系統", layout="wide")
@@ -24,8 +24,12 @@ if 'tracking_list' not in st.session_state:
 if st.sidebar.button("開始分析"):
     with st.spinner("載入資料中..."):
         # 1. Fetch data
-        full_stock_code = f"{stock_code}.TW"
-        df = get_historical_data(full_stock_code, period=period)
+        code, name, full_code = find_stock(stock_code)
+        if not full_code:
+            st.error(f"找不到股票：{stock_code}")
+            st.stop()
+
+        df = get_historical_data(full_code, period=period)
 
         if df is not None:
             # 2. Get institutional data
