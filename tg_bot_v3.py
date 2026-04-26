@@ -115,27 +115,45 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text(text=msg, reply_markup=create_main_keyboard(code))
 
-async def pick_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global LATEST_PICKED
-    await update.message.reply_text("🕵️ 正在掃描全市場強勢個股...")
+async def run_screening(limit=30, short_ma=20, long_ma=60):
+    """
+    Scan the market for stocks matching the strategy.
+    """
+    global STOCK_LIST_DF
+    if STOCK_LIST_DF.empty:
+        from data_acquisition import sync_stock_list
+        sync_stock_list()
 
-    # Simple all-market scan (limited for demo)
-    symbols = STOCK_LIST_DF['Code'].tolist()[:30]
+    symbols = STOCK_LIST_DF['Code'].tolist()[:limit]
     inst_data = get_recent_institutional_data(5)
     sorted_dates = sorted(inst_data.keys(), reverse=True)
 
     results = []
     for s in symbols:
-        _, name, full_code = find_stock(s)
-        df = get_historical_data(full_code, period="1y")
-        history = [inst_data[d][s] for d in sorted_dates if s in inst_data[d]]
-        matched, _ = apply_strategy(df, history)
-        if matched: results.append(s)
-        if len(results) >= 4: break
+        try:
+            code, name, full_code = find_stock(s)
+            df = get_historical_data(full_code, period="1y")
+            if df is None or df.empty: continue
+
+            history = [inst_data[d][s] for d in sorted_dates if s in inst_data[d]]
+            matched, risk = apply_strategy(df, history, short_ma=short_ma, long_ma=long_ma)
+            if matched:
+                results.append((s, df, risk))
+        except:
+            continue
+    return results
+
+async def pick_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global LATEST_PICKED
+    await update.message.reply_text("🕵️ 正在掃描全市場強勢個股 (約需 1 分鐘)，請稍候...")
+
+    # Simple all-market scan (limited for demo)
+    results = await run_screening(limit=50)
 
     if results:
-        LATEST_PICKED = results
-        await update.message.reply_text(f"🚀 今日強勢股：{', '.join(results)}\n已更新至快捷選單。")
+        LATEST_PICKED = [r[0] for r in results]
+        summary = f"🚀 今日強勢股：{', '.join(LATEST_PICKED[:4])}\n已更新至快捷選單。"
+        await update.message.reply_text(summary, reply_markup=create_main_keyboard(LATEST_PICKED[0]))
     else:
         await update.message.reply_text("今日無符合條件個股。")
 

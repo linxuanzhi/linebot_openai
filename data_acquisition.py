@@ -17,30 +17,38 @@ def sync_stock_list():
     global STOCK_LIST_DF
     print("Syncing stock list from TWSE...")
 
-    # TSEC Stocks
     tsec_url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
-    # OTC Stocks
     otc_url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=4"
 
     all_data = []
     for url, suffix in [(tsec_url, ".TW"), (otc_url, ".TWO")]:
         try:
             response = requests.get(url)
-            df = pd.read_html(response.text)[0]
-            df.columns = df.iloc[0]
-            df = df.iloc[2:]
+            response.encoding = 'big5'
+            # TWSE page is simple enough to parse with BS4 to avoid pandas column issues
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            table = soup.find('table', {'class': 'h4'})
+            rows = table.find_all('tr')
 
-            # Filter for stocks (format: "Code Name")
-            df['Code'] = df['有價證券代號及名稱'].str.split('　').str[0]
-            df['Name'] = df['有價證券代號及名稱'].str.split('　').str[1]
-            df = df[df['Code'].str.isdigit()].copy()
-            df['Full_Code'] = df['Code'] + suffix
-            all_data.append(df[['Code', 'Name', 'Full_Code']])
+            for row in rows[1:]: # Skip header
+                cols = row.find_all('td')
+                if len(cols) < 1: continue
+                text = cols[0].get_text().strip()
+                if '　' in text:
+                    code, name = text.split('　', 1)
+                    if code.isdigit():
+                        all_data.append({
+                            'Code': code,
+                            'Name': name,
+                            'Full_Code': code + suffix
+                        })
         except Exception as e:
             print(f"Error syncing {suffix} stocks: {e}")
 
     if all_data:
-        STOCK_LIST_DF = pd.concat(all_data, ignore_index=True)
+        STOCK_LIST_DF = pd.DataFrame(all_data)
+        STOCK_LIST_DF = STOCK_LIST_DF.drop_duplicates(subset=['Code'])
         print(f"Sync complete. Total stocks: {len(STOCK_LIST_DF)}")
     return STOCK_LIST_DF
 

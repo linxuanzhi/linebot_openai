@@ -29,13 +29,23 @@ def run_scheduler():
 
 if __name__ == "__main__":
     # 1. Sync data at startup
-    sync_stock_list()
+    try:
+        sync_stock_list()
+    except Exception as e:
+        print(f"Startup Sync Error: {e}")
 
     # 2. Start services
+    print("Starting Streamlit...")
     threading.Thread(target=run_streamlit, daemon=True).start()
+    print("Starting Scheduler...")
     threading.Thread(target=run_scheduler, daemon=True).start()
 
     # 3. Start Telegram Bot (Main Process)
-    print("Starting Telegram Bot...")
-    app = get_application()
-    app.run_polling()
+    token = os.getenv('TG_TOKEN')
+    if not token:
+        print("CRITICAL ERROR: TG_TOKEN not found in environment.")
+    else:
+        print(f"Starting Telegram Bot with token: {token[:10]}...")
+        app = get_application()
+        print("Bot is now polling...")
+        app.run_polling(drop_pending_updates=True)
