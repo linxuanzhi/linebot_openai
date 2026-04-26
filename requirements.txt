@@ -1,7 +1,3 @@
-line-bot-sdk
-flask
-openai < 1.0.0
-gunicorn
 pandas
 yfinance
 requests
@@ -10,3 +6,9 @@ plotly
 beautifulsoup4
 schedule
 FinMind
+python-telegram-bot
+mplfinance
+python-dotenv
+lxml
+gunicorn
+flask

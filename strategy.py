@@ -62,27 +62,49 @@ def check_above_monthly_line(df):
     df['Above_20MA'] = df['Close'] > df['20MA']
     return df
 
-def apply_strategy(df, institutional_net_buy_3d=0):
+def apply_strategy(df, institutional_history_list, ma_window=20, sl_percent=10):
     """
     Apply the selection logic:
-    - 5MA > 10MA > 20MA
-    - Close > 20MA
-    - Institutional Net Buy (3 days) > 1000 sheets (1,000,000 shares)
-    Note: TWSE data is in shares, 1 sheet = 1000 shares.
+    - Price > 20MA
+    - SITC continuous net buy >= 3 days
+    - Volume expansion (Today > 5-day avg volume)
+    Returns: (bool, risk_metrics)
     """
-    df = calculate_ma(df)
-    df = check_ma_bullish_alignment(df)
-    df = check_above_monthly_line(df)
+    if len(df) < ma_window:
+        return False, {}
 
-    # 1000 sheets = 1,000,000 shares
-    institutional_threshold = 1000 * 1000
+    df = calculate_ma(df, windows=[ma_window])
+    ma_col = f'{ma_window}MA'
 
-    df['Strategy_Signal'] = (
-        df['MA_Bullish'] &
-        df['Above_20MA'] &
-        (institutional_net_buy_3d > institutional_threshold)
-    )
-    return df
+    latest = df.iloc[-1]
+
+    # 1. Price > MA
+    price_above_ma = latest['Close'] > latest[ma_col]
+
+    # 2. SITC continuous net buy >= 3 days
+    if len(institutional_history_list) < 3:
+        sitc_cont_buy = False
+    else:
+        sitc_cont_buy = all(d.get('SITC', 0) > 0 for d in institutional_history_list[:3])
+
+    # 3. Volume expansion
+    vol_5ma = df['Volume'].tail(5).mean()
+    vol_expansion = latest['Volume'] > vol_5ma
+
+    is_matched = price_above_ma and sitc_cont_buy and vol_expansion
+
+    risk_metrics = {}
+    if is_matched:
+        buy_price = latest['Close']
+        stop_loss = buy_price * (1 - sl_percent/100)
+        target_price = buy_price + (buy_price - stop_loss) * 2
+        risk_metrics = {
+            'buy_price': buy_price,
+            'stop_loss': stop_loss,
+            'target_price': target_price
+        }
+
+    return is_matched, risk_metrics
 
 def strong_rebound_screening(df, institutional_history_list):
     """

@@ -13,9 +13,13 @@ st.title("專屬台股分析系統")
 st.sidebar.header("設定")
 stock_code = st.sidebar.text_input("輸入股票代號", value="2330")
 period = st.sidebar.selectbox("選擇時間範圍", ["6mo", "1y", "2y", "5y"], index=1)
+ma_days = st.sidebar.slider("均線天數 (MA)", 5, 60, 20)
 
 st.sidebar.header("風險控管設定")
 sl_ratio = st.sidebar.slider("停損比例 (%)", 5, 20, 10)
+
+if 'tracking_list' not in st.session_state:
+    st.session_state.tracking_list = []
 
 if st.sidebar.button("開始分析"):
     with st.spinner("載入資料中..."):
@@ -34,11 +38,12 @@ if st.sidebar.button("開始分析"):
                 )
 
             # 3. Calculate indicators and strategy
-            df = calculate_ma(df)
+            # Prepare dummy history for single analysis
+            dummy_history = [{'SITC': 1000, 'Foreign': 1000}] * 3
+            is_matched, risk = apply_strategy(df, dummy_history, ma_window=ma_days, sl_percent=sl_ratio)
+
+            df = calculate_ma(df, windows=[ma_days])
             df = calculate_bollinger_bands(df)
-            df = calculate_rsi(df)
-            df = calculate_macd(df)
-            df = apply_strategy(df, net_buy_3d)
 
             # 4. Fetch additional info
             stock_info = {}
@@ -72,13 +77,23 @@ if st.sidebar.button("開始分析"):
             st.subheader("交易策略建議 (風報比 1:2)")
             buy_price = latest_price
             stop_loss = buy_price * (1 - sl_ratio/100)
-            take_profit = buy_price * (1 + (sl_ratio * 2)/100)
+            # 風報比 1:2 -> (Target - Buy) = 2 * (Buy - StopLoss)
+            take_profit = buy_price + (buy_price - stop_loss) * 2
 
             risk_df = pd.DataFrame({
                 "項目": ["建議買入價", "停損價格 (Red)", "目標獲利價 (Green)"],
                 "價格": [f"{buy_price:.2f}", f"{stop_loss:.2f}", f"{take_profit:.2f}"],
-                "說明": ["當日收盤價", f"-{sl_ratio}% 停損", f"+{sl_ratio*2}% 獲利"]
+                "說明": ["當日收盤價", f"-{sl_ratio}% 停損", f"風報比 1:2"]
             })
+
+            if st.button("加入模擬追蹤清單"):
+                st.session_state.tracking_list.append({
+                    'code': stock_code,
+                    'buy_price': buy_price,
+                    'stop_loss': stop_loss,
+                    'target': take_profit
+                })
+                st.success(f"已將 {stock_code} 加入追蹤清單")
 
             def color_risk(row):
                 if "停損" in row['項目']:
@@ -99,8 +114,8 @@ if st.sidebar.button("開始分析"):
                             name='K線'))
 
             # Add MAs
-            for ma in ['5MA', '10MA', '20MA']:
-                fig.add_trace(go.Scatter(x=df.index, y=df[ma], name=ma, line=dict(width=1.5)))
+            ma_col = f'{ma_days}MA'
+            fig.add_trace(go.Scatter(x=df.index, y=df[ma_col], name=ma_col, line=dict(width=1.5)))
 
             # Add Bollinger Bands
             fig.add_trace(go.Scatter(x=df.index, y=df['BB_Upper'], name='布林上軌', line=dict(dash='dash', color='gray')))
@@ -117,6 +132,35 @@ if st.sidebar.button("開始分析"):
             st.write(df.tail(10))
         else:
             st.error(f"無法獲取股票 {stock_code} 的資料，請檢查代號是否正確。")
+
+# Mock Tracking Display
+if st.session_state.tracking_list:
+    st.divider()
+    st.subheader("📋 模擬追蹤清單")
+    tracking_data = []
+    for item in st.session_state.tracking_list:
+        # Fetch current price
+        try:
+            curr_df = get_historical_data(item['code'], period="1d")
+            curr_price = curr_df['Close'].iloc[-1]
+            status = "正常"
+            if curr_price <= item['stop_loss']:
+                status = "🚨 觸及停損"
+            elif curr_price >= item['target']:
+                status = "✅ 觸及目標"
+
+            tracking_data.append({
+                "代號": item['code'],
+                "買入價": f"{item['buy_price']:.2f}",
+                "停損價": f"{item['stop_loss']:.2f}",
+                "目標價": f"{item['target']:.2f}",
+                "現價": f"{curr_price:.2f}",
+                "狀態": status
+            })
+        except:
+            continue
+
+    st.table(pd.DataFrame(tracking_data))
 
 else:
     st.info("請在左側輸入股票代號並點擊「開始分析」。")

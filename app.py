@@ -1,85 +1,74 @@
-from flask import Flask, request, abort
-
-from linebot import (
-    LineBotApi, WebhookHandler
-)
-from linebot.exceptions import (
-    InvalidSignatureError
-)
-from linebot.models import *
-
-#======python的函數庫==========
-import tempfile, os
-import datetime
-import openai
-import time
-import traceback
-#======python的函數庫==========
-
-app = Flask(__name__)
-static_tmp_path = os.path.join(os.path.dirname(__file__), 'static', 'tmp')
-# Channel Access Token
-line_bot_api = LineBotApi(os.getenv('CHANNEL_ACCESS_TOKEN'))
-# Channel Secret
-handler = WebhookHandler(os.getenv('CHANNEL_SECRET'))
-# OPENAI API Key初始化設定
-openai.api_key = os.getenv('OPENAI_API_KEY')
-
-
-def GPT_response(text):
-    # 接收回應
-    response = openai.Completion.create(model="gpt-3.5-turbo-instruct", prompt=text, temperature=0.5, max_tokens=500)
-    print(response)
-    # 重組回應
-    answer = response['choices'][0]['text'].replace('。','')
-    return answer
-
-
-# 監聽所有來自 /callback 的 Post Request
-@app.route("/callback", methods=['POST'])
-def callback():
-    # get X-Line-Signature header value
-    signature = request.headers['X-Line-Signature']
-    # get request body as text
-    body = request.get_data(as_text=True)
-    app.logger.info("Request body: " + body)
-    # handle webhook body
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        abort(400)
-    return 'OK'
-
-
-# 處理訊息
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    msg = event.message.text
-    try:
-        GPT_answer = GPT_response(msg)
-        print(GPT_answer)
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(GPT_answer))
-    except:
-        print(traceback.format_exc())
-        line_bot_api.reply_message(event.reply_token, TextSendMessage('你所使用的OPENAI API key額度可能已經超過，請於後台Log內確認錯誤訊息'))
-        
-
-@handler.add(PostbackEvent)
-def handle_message(event):
-    print(event.postback.data)
-
-
-@handler.add(MemberJoinedEvent)
-def welcome(event):
-    uid = event.joined.members[0].user_id
-    gid = event.source.group_id
-    profile = line_bot_api.get_group_member_profile(gid, uid)
-    name = profile.display_name
-    message = TextSendMessage(text=f'{name}歡迎加入')
-    line_bot_api.reply_message(event.reply_token, message)
-        
-        
 import os
+import subprocess
+import time
+import schedule
+import threading
+from datetime import datetime
+from tg_bot import start, pick, run_screening, generate_chart
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def run_streamlit():
+    """Run the Streamlit dashboard."""
+    subprocess.Popen(["streamlit", "run", "dashboard.py", "--server.port", os.getenv("PORT", "8501"), "--server.address", "0.0.0.0"])
+
+def run_tg_bot():
+    """Run the Telegram Bot."""
+    token = os.getenv('TG_TOKEN')
+    if not token:
+        print("TG_TOKEN not found, skipping bot.")
+        return
+
+    application = ApplicationBuilder().token(token).build()
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('pick', pick))
+
+    # Run polling in the background
+    application.run_polling()
+
+def scheduled_task():
+    """Task to run every day at 15:30."""
+    print(f"[{datetime.now()}] Running scheduled screening...")
+    token = os.getenv('TG_TOKEN')
+    chat_id = os.getenv('CHAT_ID')
+    if not token or not chat_id:
+        return
+        
+    async def run():
+        from telegram import Bot
+        bot = Bot(token)
+        results = await run_screening(limit=50)
+        if not results:
+            await bot.send_message(chat_id, "今日盤後掃描：無符合條件個股。")
+            return
+
+        await bot.send_message(chat_id, f"🔔 盤後自動推播：今日共選出 {len(results)} 檔個股")
+        for symbol, df, risk in results:
+            chart_path = generate_chart(df, symbol)
+            msg = f"📍 股票：{symbol}\n💰 買入價：{risk['buy_price']:.2f}\n🚨 停損價：{risk['stop_loss']:.2f}\n📈 目標價：{risk['target_price']:.2f}"
+            keyboard = [[InlineKeyboardButton("查看基本面", url=f"https://tw.stock.yahoo.com/quote/{symbol}")]]
+            await bot.send_photo(chat_id, photo=open(chart_path, 'rb'), caption=msg, reply_markup=InlineKeyboardMarkup(keyboard))
+            os.remove(chart_path)
+
+    asyncio.run(run())
+
+def run_scheduler():
+    schedule.every().day.at("15:30").do(scheduled_task)
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
+import asyncio
+
 if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    # Start Streamlit in a separate process
+    threading.Thread(target=run_streamlit, daemon=True).start()
+
+    # Start Scheduler in a separate thread
+    threading.Thread(target=run_scheduler, daemon=True).start()
+
+    # Start TG Bot (blocking)
+    run_tg_bot()

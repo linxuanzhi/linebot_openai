@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 from datetime import datetime, timedelta
+from FinMind.data import DataLoader
 
 def get_historical_data(symbol, period="1y", auto_adjust=True):
     """
@@ -89,7 +90,7 @@ def get_institutional_investors(date_obj=None):
         print(f"Error crawling institutional data for {date_str}: {e}")
         return None
 
-def get_recent_institutional_data(days=3):
+def get_recent_institutional_data(days=10):
     """
     Get daily institutional data for the last few days for all stocks.
     Returns a dict: {date: {code: net_buy}}
@@ -99,37 +100,80 @@ def get_recent_institutional_data(days=3):
     count = 0
     attempt = 0
 
-    while count < days and attempt < 10:
+    # Try using FinMind if possible, or fallback to TWSE crawler
+    dl = DataLoader()
+
+    while count < days and attempt < 20:
         target_date = current_date - timedelta(days=attempt)
         if target_date.weekday() < 5:
-            df = get_institutional_investors(target_date)
-            if df is not None:
-                date_key = target_date.strftime('%Y-%m-%d')
-                daily_data[date_key] = {}
-                for _, row in df.iterrows():
-                    code = row['證券代號'].strip()
-                    # Also include specific breakdown for SITC and Foreign
-                    # TWSE T86W columns:
-                    # 0: Code, 1: Name, 2: Foreign Buy, 3: Foreign Sell, 4: Foreign Net...
-                    # 7: SITC Buy, 8: SITC Sell, 9: SITC Net (投信買賣超股數)
-                    # 18: Total Net
-                    try:
-                        sitc_net = float(row['投信買賣超股數'].replace(',', '')) if isinstance(row['投信買賣超股數'], str) else row['投信買賣超股數']
-                        foreign_net = float(row['外資及陸資買賣超股數(不含外資自營商)'].replace(',', '')) if isinstance(row['外資及陸資買賣超股數(不含外資自營商)'], str) else row['外資及陸資買賣超股數(不含外資自營商)']
-                        total_net = float(row['三大法人買賣超股數'].replace(',', '')) if isinstance(row['三大法人買賣超股數'], str) else row['三大法人買賣超股數']
+            date_str = target_date.strftime('%Y-%m-%d')
+            try:
+                # FinMind Institutional Data
+                df = dl.taiwan_stock_institutional_investors(
+                    data_id="", # Empty means all
+                    start_date=date_str,
+                    end_date=date_str
+                )
+                if not df.empty:
+                    daily_data[date_str] = {}
+                    # Group by stock_id
+                    for stock_id, group in df.groupby('stock_id'):
+                        sitc = group[group['name'] == 'Investment_Trust']['buy'].sum() - \
+                               group[group['name'] == 'Investment_Trust']['sell'].sum()
+                        foreign = group[group['name'] == 'Foreign_Investor']['buy'].sum() - \
+                                  group[group['name'] == 'Foreign_Investor']['sell'].sum()
+                        total = group['buy'].sum() - group['sell'].sum()
 
-                        daily_data[date_key][code] = {
-                            'SITC': sitc_net,
-                            'Foreign': foreign_net,
-                            'Total': total_net
+                        daily_data[date_str][stock_id] = {
+                            'SITC': sitc,
+                            'Foreign': foreign,
+                            'Total': total
                         }
-                    except:
-                        continue
-                count += 1
-            time.sleep(1)
+                    count += 1
+                else:
+                    # Fallback to TWSE crawler
+                    df_twse = get_institutional_investors(target_date)
+                    if df_twse is not None:
+                        daily_data[date_str] = {}
+                        for _, row in df_twse.iterrows():
+                            code = row['證券代號'].strip()
+                            try:
+                                sitc_net = float(row['投信買賣超股數'].replace(',', '')) if isinstance(row['投信買賣超股數'], str) else row['投信買賣超股數']
+                                foreign_net = float(row['外資及陸資買賣超股數(不含外資自營商)'].replace(',', '')) if isinstance(row['外資及陸資買賣超股數(不含外資自營商)'], str) else row['外資及陸資買賣超股數(不含外資自營商)']
+                                total_net = float(row['三大法人買賣超股數'].replace(',', '')) if isinstance(row['三大法人買賣超股數'], str) else row['三大法人買賣超股數']
+
+                                daily_data[date_str][code] = {
+                                    'SITC': sitc_net,
+                                    'Foreign': foreign_net,
+                                    'Total': total_net
+                                }
+                            except:
+                                continue
+                        count += 1
+            except Exception as e:
+                print(f"Error fetching institutional data for {date_str}: {e}")
+
+            time.sleep(0.5)
         attempt += 1
 
     return daily_data
+
+def get_margin_trading(date_obj=None):
+    """
+    Crawl margin trading data (融資融券) from TWSE.
+    """
+    if date_obj is None:
+        date_obj = datetime.now()
+    date_str = date_obj.strftime('%Y%m%d')
+    url = f"https://www.twse.com.tw/rwd/zh/margin/MI_MARGN?date={date_str}&selectType=ALLSEL&response=json"
+    try:
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        if data['stat'] != 'OK':
+            return None
+        return pd.DataFrame(data['data'], columns=data['fields'])
+    except:
+        return None
 
 def get_all_tsec_symbols():
     """

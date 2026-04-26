@@ -12,23 +12,13 @@ def test_integration():
 
     print(f"Data fetched for {symbol}, rows: {len(df)}")
 
-    df = calculate_ma(df)
-    df = calculate_bollinger_bands(df)
-    from strategy import calculate_rsi, calculate_macd
-    df = calculate_rsi(df)
-    df = calculate_macd(df)
-    print("Indicators calculated")
-    print(f"RSI: {df['RSI'].iloc[-1]}, MACD: {df['MACD'].iloc[-1]}")
+    # Simulate institutional history
+    mock_history = [{'SITC': 1000, 'Foreign': 1000}] * 3
 
-    # Simulate institutional net buy
-    mock_net_buy = 2000000
-    df = apply_strategy(df, mock_net_buy)
-    print("Strategy applied")
-
-    latest = df.iloc[-1]
-    print(f"Latest Close: {latest['Close']}")
-    print(f"5MA: {latest['5MA']}, 10MA: {latest['10MA']}, 20MA: {latest['20MA']}")
-    print(f"Strategy Signal: {latest['Strategy_Signal']}")
+    is_matched, risk = apply_strategy(df, mock_history)
+    print(f"Strategy applied, Matched: {is_matched}")
+    if is_matched:
+        print(f"Buy: {risk['buy_price']}, SL: {risk['stop_loss']}, Target: {risk['target_price']}")
 
     print("Integration test passed!")
 
